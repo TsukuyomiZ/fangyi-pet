@@ -163,7 +163,7 @@ export function fangyiSvg(mood: Mood, view: View = 'full'): string {
 </svg>`
 }
 
-const STATUS_LABEL: Record<Mood, string> = {
+export const STATUS_LABEL: Record<Mood, string> = {
   idle: '準備中',
   thinking: '思考中',
   working: '工作中',

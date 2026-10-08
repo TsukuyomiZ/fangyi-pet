@@ -1,7 +1,8 @@
-import type { EngineInterface, Register } from 'claude-code'
+import type { ElementTable, EngineInterface, Register } from 'claude-code'
 
 import type { Mood } from '../types'
-import { fangyiStatusSvg, fangyiSvg } from './fangyi-svg'
+import { STATUS_LABEL, fangyiStatusSvg, fangyiSvg } from './fangyi-svg'
+import { sprite } from './pixel-sprites'
 
 const NAME = '莊芳宜'
 const LIME = '#c8d400'
@@ -83,6 +84,46 @@ async function setState($: EngineInterface, state: PetState, force = false): Pro
       $.ui.toast(`桌寵狀態寫入失敗：${error instanceof Error ? error.message : String(error)} (${file})`)
     }
   }
+}
+
+// Whether the terminal draws pictures (the kitty graphics protocol: kitty,
+// Ghostty); every other terminal gets coloured half-block cells.
+let drawsPictures: boolean | undefined
+
+async function terminalDrawsPictures($: EngineInterface): Promise<boolean> {
+  if (drawsPictures === undefined) {
+    try {
+      const term = (await $.env.get('TERM')) ?? ''
+      const program = ((await $.env.get('TERM_PROGRAM')) ?? '').toLowerCase()
+      const kitty = await $.env.get('KITTY_WINDOW_ID')
+      drawsPictures = term === 'xterm-kitty' || kitty !== undefined || program === 'ghostty'
+    } catch {
+      // Unknown: half-block cells draw in any true-colour terminal.
+      drawsPictures = false
+    }
+  }
+
+  return drawsPictures
+}
+
+// One headshot in the terminal: its PNG where pictures are drawn, its
+// hand-drawn pixel sprite otherwise, both in the sprite's box of cells.
+function headshot(t: ElementTable<'terminal'>, name: string, root: string, pictures: boolean) {
+  const art = sprite(name)
+  if (pictures) {
+    const png = name === 'avatar' ? 'fangyi-speaking.png' : `${name}.png`
+    return (
+      <t.Image
+        key={name}
+        source={{ file: `${root}/terminal-art/${png}`, format: 'png' }}
+        columns={art.columns}
+        rows={art.rows}
+        alt=" "
+      />
+    )
+  }
+
+  return <t.Raster key={name} columns={art.columns} rows={art.rows} cells={art.cells} />
 }
 
 // Applies a change to the running sub-agents and rewrites the state if the
@@ -201,9 +242,26 @@ export const register: Register = on => {
   })
 
   // Each block of a reply: her avatar, speaking, beside a speech bubble.
-  on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
+  on('ui.render', { component: 'AssistantMessage' }, async ($, e) => {
     if (e.surface === 'terminal') {
-      return next(e)
+      const t = $.ui.resolve(e)
+      const isFirst = e.props.isFirstOfReply
+      const pictures = await terminalDrawsPictures($)
+
+      // The avatar opens a reply; its later blocks keep the bubble in line.
+      return (
+        <t.Box flexDirection="row" alignItems="flex-start" gap={1}>
+          {isFirst ? headshot(t, 'avatar', $.plugin.root, pictures) : <t.Box width={sprite('avatar').columns} />}
+          <t.Box flexDirection="column" flexGrow={1} flexShrink={1} borderStyle="round" borderColor={LIME} paddingX={1}>
+            {isFirst && (
+              <t.Text bold color={LIME}>
+                {NAME}
+              </t.Text>
+            )}
+            <t.Markdown text={e.props.text} />
+          </t.Box>
+        </t.Box>
+      )
     }
     const { Box, Text, Markdown, Svg } = $.ui.resolve(e)
 
@@ -233,13 +291,36 @@ export const register: Register = on => {
   // status label (the spinner row is too short to show either legibly).
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     // While answering, the reply itself is on screen: nothing to add.
-    if (e.surface === 'terminal' || !e.props.isWorking || e.props.hasSurvey || last === 'answering') {
+    if (!e.props.isWorking || e.props.hasSurvey || last === 'answering') {
       return next(e)
     }
-    const { Box, Svg } = $.ui.resolve(e)
     const mood = BAND_MOOD[last]
     const withCompanions = agents.size > 0
     const detail = withCompanions ? `sub-agent ×${agents.size}` : last === 'working' ? tool : ''
+
+    if (e.surface === 'terminal') {
+      const t = $.ui.resolve(e)
+      const pictures = await terminalDrawsPictures($)
+      // The headshots only where the band has the rows for them.
+      const fits = e.props.maxRows >= sprite(`fangyi-${mood}`).rows
+      const root = $.plugin.root
+
+      return (
+        <t.Box flexDirection="row" alignItems="flex-end" gap={1}>
+          {fits && withCompanions && headshot(t, 'panda', root, pictures)}
+          {fits && headshot(t, `fangyi-${mood}`, root, pictures)}
+          {fits && withCompanions && headshot(t, 'mifu', root, pictures)}
+          <t.Box flexDirection="column" borderStyle="round" borderColor={LIME} paddingX={1} alignSelf="center">
+            <t.Text bold color={LIME}>
+              {STATUS_LABEL[mood]}…
+            </t.Text>
+            {detail !== '' && <t.Text dimColor>{detail}</t.Text>}
+          </t.Box>
+        </t.Box>
+      )
+    }
+
+    const { Box, Svg } = $.ui.resolve(e)
     const status = fangyiStatusSvg(mood, detail, withCompanions)
 
     return (

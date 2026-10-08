@@ -30,6 +30,14 @@ claude plugin update fangyi-pet
 
 需要支援 mods（hooks 模組）的 Claude Code 版本；目前在 2.1.293 上測試過。
 
+### 終端機（CLI）
+
+在終端機裡一樣有對話泡泡和輸入框上方的狀態，人物改用頭像：
+
+- 一般終端機（Windows Terminal、iTerm2 等支援全彩的）：手繪的 12×10 像素小頭像，用半格字元 ▀ 畫，佔 12 欄 × 5 行。
+- kitty、Ghostty（支援 kitty 圖片協定）：直接顯示 PNG 頭像。
+- 終端機高度不夠時，輸入框上方只顯示狀態文字。
+
 ## 桌寵（Windows）
 
 桌寵是獨立的小程式，不會隨 mod 一起自動啟動。
@@ -72,6 +80,11 @@ claude plugin update fangyi-pet
 hooks/register.tsx    對話泡泡、處理中姿勢、回報 session 狀態
 hooks/fangyi-svg.ts   莊芳宜的 SVG 繪圖（六種姿勢）與輸入框上方的狀態圖
 hooks/companions-svg.ts  熊貓與弭弗的 SVG 繪圖
+hooks/pixel-sprites.ts  終端機用的手繪像素頭像（直接改裡面的文字格就能改圖）
+terminal-art/         kitty / Ghostty 用的 PNG 頭像
+scripts/              重新產生 PNG 頭像：node scripts/render-art.mjs <暫存資料夾>，
+                      再 py scripts/terminal_art.py <暫存資料夾>（需要 Edge 與 Pillow）
+tests/                claude plugin test 的測試
 desktop-pet/          桌寵：pet.ps1、start-pet.vbs、poses/*.png
 ```
 
