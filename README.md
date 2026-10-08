@@ -2,7 +2,8 @@
 
 讓《明日方舟：終末地》的莊芳宜（Q 版二創）陪你用 Claude Code：
 
-- **對話裡**：Claude 的每則回覆由她用對話泡泡說出來；處理中的那一列，她會依狀態換成思考或工作的姿勢。
+- **對話裡**：Claude 的每則回覆由她用對話泡泡說出來；處理中時，輸入框上方會出現她的姿勢和大字狀態（思考中… / 工作中… / 等你確認…）。
+- **sub-agent**：有 sub-agent 在跑時，熊貓和弭弗會跟著她一起出來，熊貓在左、弭弗在右。
 - **桌面上（Windows）**：桌寵顯示每個 Claude Code session 在做什麼，session 跑完時她會歡呼並響一聲，讓你知道該回去看了。
 
 ![四種姿勢](docs/poses.png)
@@ -49,6 +50,10 @@ claude plugin update fangyi-pet
 | 等你確認 | 跳出權限詢問，或 Claude 問你問題 | 舉手，旁邊一個紅色「!」 |
 | 跑好了 ✓ | 這一輪結束 | 雙手歡呼，旁邊有星星，同時響一聲 |
 
+有 sub-agent 在跑時，熊貓和弭弗會站在她兩側，那個 session 的狀態後面也會加上「· N sub-agent」：
+
+![sub-agent 執行中](docs/subagents.png)
+
 同時有好幾個 session 時，她的姿勢優先顯示最需要你處理的事：等你確認 → 跑好了 → 工作中 → 回答中 → 思考中。
 
 ### 操作
@@ -65,10 +70,11 @@ claude plugin update fangyi-pet
 ```
 .claude-plugin/       plugin.json、marketplace.json
 hooks/register.tsx    對話泡泡、處理中姿勢、回報 session 狀態
-hooks/fangyi-svg.ts   莊芳宜的 SVG 繪圖（六種姿勢）
+hooks/fangyi-svg.ts   莊芳宜的 SVG 繪圖（六種姿勢）與輸入框上方的狀態圖
+hooks/companions-svg.ts  熊貓與弭弗的 SVG 繪圖
 desktop-pet/          桌寵：pet.ps1、start-pet.vbs、poses/*.png
 ```
 
 ## 說明
 
-角色圖是依莊芳宜的造型重新繪製的非官方二創，角色版權屬於原作。
+角色圖是依莊芳宜、熊貓、弭弗的造型重新繪製的非官方二創，角色版權屬於原作。

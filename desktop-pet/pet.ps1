@@ -30,8 +30,14 @@ if (-not $isFirst -and -not $Snapshot) { exit }
             HorizontalAlignment="Center" Visibility="Collapsed">
       <StackPanel x:Name="Rows"/>
     </Border>
-    <Image x:Name="Pet" Width="130" Height="181" HorizontalAlignment="Center" Cursor="Hand"
-           RenderOptions.BitmapScalingMode="HighQuality"/>
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Cursor="Hand">
+      <Image x:Name="Panda" Width="104" Height="145" VerticalAlignment="Bottom" Visibility="Collapsed"
+             RenderOptions.BitmapScalingMode="HighQuality"/>
+      <Image x:Name="Pet" Width="130" Height="181" VerticalAlignment="Bottom"
+             RenderOptions.BitmapScalingMode="HighQuality"/>
+      <Image x:Name="Mifu" Width="104" Height="145" VerticalAlignment="Bottom" Visibility="Collapsed"
+             RenderOptions.BitmapScalingMode="HighQuality"/>
+    </StackPanel>
   </StackPanel>
 </Window>
 '@
@@ -39,6 +45,8 @@ $window = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader
 $bubble = $window.FindName('Bubble')
 $rows = $window.FindName('Rows')
 $pet = $window.FindName('Pet')
+$panda = $window.FindName('Panda')
+$mifu = $window.FindName('Mifu')
 
 function Load-Pose([string]$name) {
   $b = New-Object System.Windows.Media.Imaging.BitmapImage
@@ -51,6 +59,9 @@ function Load-Pose([string]$name) {
 }
 $poses = @{}
 foreach ($p in 'idle', 'thinking', 'working', 'speaking', 'done', 'waiting') { $poses[$p] = Load-Pose $p }
+# The companions who stand beside her while any session runs sub-agents.
+$panda.Source = Load-Pose 'panda'
+$mifu.Source = Load-Pose 'mifu'
 
 # How each state is shown: its label, colour, and order in the list.
 $look = @{
@@ -114,6 +125,11 @@ function Refresh {
   elseif ($states -contains 'thinking') { $pose = 'thinking' }
   $pet.Source = $poses[$pose]
 
+  # Sub-agents count wherever they run, a finished turn's background ones too.
+  $helped = @($sessions | Where-Object { [int]$_.agents -gt 0 }).Count -gt 0
+  $panda.Visibility = if ($helped) { 'Visible' } else { 'Collapsed' }
+  $mifu.Visibility = $panda.Visibility
+
   $rows.Children.Clear()
   foreach ($s in ($shown | Sort-Object { $look[$_.state].rank }, { $_.folder })) {
     $l = $look[$s.state]
@@ -133,6 +149,7 @@ function Refresh {
 
     $status = New-Object System.Windows.Controls.TextBlock
     $status.Text = $l.text; $status.Foreground = $brush; $status.FontWeight = 'Bold'
+    if ([int]$s.agents -gt 0) { $status.Text += " · $([int]$s.agents) sub-agent" }
     $status.Margin = '8,0,0,0'; $status.FontSize = 12
     [System.Windows.Controls.DockPanel]::SetDock($status, 'Right')
 

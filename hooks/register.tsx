@@ -25,6 +25,10 @@ const BAND_MOOD: Record<PetState, Mood> = {
 
 const PROMPT_CHARS = 18
 
+// Where a prompt the person typed comes from: the terminal, a remote
+// surface, or a host app such as the desktop.
+const PERSON_ORIGINS = new Set(['composer', 'bridge', 'sdk'])
+
 // The band's drawing is laid out at 160px tall; this scales it on screen.
 const BAND_SCALE = 0.5
 
@@ -35,6 +39,8 @@ let id = ''
 let tool = ''
 let last: PetState = 'idle'
 let isReported = false
+// The sub-agents running now, by agent id; while any run, the companions show.
+const agents = new Set<string>()
 
 // The mod lives under ~/.claude, so its own folder names ~/.claude; the
 // environment is the fallback.
@@ -68,7 +74,7 @@ async function setState($: EngineInterface, state: PetState, force = false): Pro
   try {
     await locate($)
     const updatedAt = await $.clock.now()
-    await $.fs.write(file, JSON.stringify({ id, state, folder, prompt, updatedAt }))
+    await $.fs.write(file, JSON.stringify({ id, state, folder, prompt, agents: agents.size, updatedAt }))
   } catch (error) {
     // The pet is a nicety: a failed write never disturbs the session, but
     // says why once.
@@ -76,6 +82,33 @@ async function setState($: EngineInterface, state: PetState, force = false): Pro
       isReported = true
       $.ui.toast(`桌寵狀態寫入失敗：${error instanceof Error ? error.message : String(error)} (${file})`)
     }
+  }
+}
+
+// Applies a change to the running sub-agents and rewrites the state if the
+// count moved.
+async function changeAgents($: EngineInterface, change: () => void): Promise<void> {
+  const before = agents.size
+  change()
+  if (agents.size !== before) {
+    await setState($, last, true)
+  }
+}
+
+// Drops any counted sub-agent the engine no longer lists as running, in case
+// its end was missed.
+async function reconcileAgents($: EngineInterface): Promise<void> {
+  try {
+    const running = new Set((await $.agent.list()).filter(agent => agent.status === 'running').map(agent => agent.id))
+    await changeAgents($, () => {
+      for (const agentId of agents) {
+        if (!running.has(agentId)) {
+          agents.delete(agentId)
+        }
+      }
+    })
+  } catch {
+    // The count is a nicety; a failed listing leaves it as it was.
   }
 }
 
@@ -87,7 +120,11 @@ export const register: Register = on => {
   })
 
   on('prompt.submit', async ($, e, next) => {
-    prompt = e.text.trim().split('\n')[0].slice(0, PROMPT_CHARS)
+    // Only what the person typed labels the session; a sub-agent's report, a
+    // notification or a schedule starts a turn but keeps the label.
+    if (PERSON_ORIGINS.has(e.origin.kind)) {
+      prompt = e.text.trim().split('\n')[0].slice(0, PROMPT_CHARS)
+    }
     await setState($, 'thinking', true)
 
     return next(e)
@@ -111,12 +148,30 @@ export const register: Register = on => {
   })
 
   on('tool.call', async ($, e, next) => {
+    // A sub-agent's own tool calls are its business, not the session's state.
+    if (e.agentId !== undefined) {
+      return next(e)
+    }
     tool = e.tool
     await setState($, e.tool === 'AskUserQuestion' ? 'waiting' : 'working', true)
     const ran = await next(e)
+    if (e.tool === 'Agent') {
+      await reconcileAgents($)
+    }
     await setState($, 'thinking')
 
     return ran
+  })
+
+  // A sub-agent starting: counted until its own turn completes.
+  on('agent.spawn', async ($, e, next) => {
+    const started = await next(e)
+    const agentId = started.agentId
+    if (agentId !== undefined) {
+      await changeAgents($, () => agents.add(agentId))
+    }
+
+    return started
   })
 
   // A permission dialog is about to be shown: the session waits on the person.
@@ -128,7 +183,11 @@ export const register: Register = on => {
 
   on('turn.complete', async ($, e, next) => {
     const done = await next(e)
-    if (e.agentId === undefined) {
+    const agentId = e.agentId
+    if (agentId !== undefined) {
+      await changeAgents($, () => agents.delete(agentId))
+    } else {
+      await reconcileAgents($)
       await setState($, 'done', true)
     }
 
@@ -179,13 +238,15 @@ export const register: Register = on => {
     }
     const { Box, Svg } = $.ui.resolve(e)
     const mood = BAND_MOOD[last]
-    const status = fangyiStatusSvg(mood, last === 'working' ? tool : '')
+    const withCompanions = agents.size > 0
+    const detail = withCompanions ? `sub-agent ×${agents.size}` : last === 'working' ? tool : ''
+    const status = fangyiStatusSvg(mood, detail, withCompanions)
 
     return (
       <Box flexDirection="row" alignItems="center">
         <Svg
           source={status.source}
-          alt={`${NAME}, ${mood}`}
+          alt={withCompanions ? `${NAME}、熊貓、弭弗, ${mood}` : `${NAME}, ${mood}`}
           width={Math.round(status.width * BAND_SCALE)}
           height={Math.round(status.height * BAND_SCALE)}
         />

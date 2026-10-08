@@ -1,4 +1,5 @@
 import type { Mood } from '../types'
+import { COMPANION_BUST, mifuSvg, pandaSvg } from './companions-svg'
 
 // A chibi drawing after Zhuang Fangyi: red antlers, long black hair with a red
 // streak, green eyes, pointed ears, white top with an olive chest band, black
@@ -187,19 +188,46 @@ function textWidth(text: string, size: number): number {
   return width
 }
 
+// The companions stand a fifth shorter than her.
+const COMPANION_SCALE = 0.8
+
 // The status band above the prompt: her bust in the mood's pose beside a large
-// status label, with a detail (the running tool's name) beneath.
-export function fangyiStatusSvg(mood: Mood, detail: string): { source: string; width: number; height: number } {
+// status label, with a detail (the running tool's name) beneath. While
+// sub-agents run, the panda stands on her left and 弭弗 on her right.
+export function fangyiStatusSvg(
+  mood: Mood,
+  detail: string,
+  withCompanions = false,
+): { source: string; width: number; height: number } {
   const label = `${STATUS_LABEL[mood]}…`
   const shown = detail.length > DETAIL_CHARS ? `${detail.slice(0, DETAIL_CHARS - 1)}…` : detail
   const pillWidth = Math.ceil(Math.max(textWidth(label, 30), textWidth(shown, 17)) + 36)
-  const figureWidth = 180
   const height = 160
-  const width = figureWidth + 12 + pillWidth + 4
+  const companionHeight = height * COMPANION_SCALE
+  const figures: string[] = []
+  let x = 0
+
+  function companion(svg: string, size: { width: number; height: number }): void {
+    const scale = companionHeight / size.height
+    figures.push(`<g transform="translate(${x} ${height - companionHeight}) scale(${scale})">${svg}</g>`)
+    x += size.width * scale
+  }
+
+  if (withCompanions) {
+    companion(pandaSvg('bust'), COMPANION_BUST.panda)
+  }
+  // Beside the companions she is drawn without the cloud or panel at her side.
+  figures.push(`<g transform="translate(${x} 0)">${fangyiSvg(mood, withCompanions ? 'bust' : 'bust-wide')}</g>`)
+  x += withCompanions ? 130 : 180
+  if (withCompanions) {
+    companion(mifuSvg('bust'), COMPANION_BUST.mifu)
+  }
+
+  const width = Math.ceil(x + 12 + pillWidth + 4)
   const labelY = shown ? 84 : 93
   const source = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
-  ${fangyiSvg(mood, 'bust-wide')}
-  <g transform="translate(${figureWidth + 12} 0)">
+  ${figures.join('\n  ')}
+  <g transform="translate(${Math.ceil(x + 12)} 0)">
     <rect x="0" y="42" width="${pillWidth}" height="78" rx="16" fill="#f6f9e3" stroke="#c8d400" stroke-width="2"/>
     <text x="18" y="${labelY}" font-size="30" font-weight="bold" fill="#3f4d17" font-family="${FONT}">${escapeXml(label)}</text>
     ${shown ? `<text x="18" y="108" font-size="17" fill="#66733a" font-family="${FONT}">${escapeXml(shown)}</text>` : ''}
