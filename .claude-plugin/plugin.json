@@ -1,0 +1,8 @@
+{
+  "name": "fangyi-pet",
+  "version": "0.2.0",
+  "description": "Zhuang Fangyi (Arknights: Endfield fan art) chibi: Claude's replies as her speech bubbles, plus a Windows desktop pet showing every session's state",
+  "author": { "name": "TsukuyomiZ" },
+  "repository": "https://github.com/TsukuyomiZ/fangyi-pet",
+  "types": "./types/index.d.ts"
+}

@@ -1,0 +1,13 @@
+{
+  "name": "fangyi-pet",
+  "description": "Zhuang Fangyi chibi for Claude Code: speech-bubble replies and a Windows desktop pet for session states",
+  "owner": {
+    "name": "TsukuyomiZ"
+  },
+  "plugins": [
+    {
+      "name": "fangyi-pet",
+      "source": "./"
+    }
+  ]
+}
