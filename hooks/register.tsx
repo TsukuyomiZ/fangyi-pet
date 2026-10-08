@@ -1,32 +1,39 @@
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Mood } from '../types'
-import { fangyiSvg } from './fangyi-svg'
+import { fangyiStatusSvg, fangyiSvg } from './fangyi-svg'
 
 const NAME = '莊芳宜'
 const LIME = '#c8d400'
 
-// The spinner's mode, as one of her poses.
-const SPINNER_MOOD: Record<string, Mood> = {
-  requesting: 'idle',
-  thinking: 'thinking',
-  responding: 'speaking',
-  'tool-input': 'working',
-  'tool-use': 'working',
-}
-
 // What this session is doing, written to ~/.claude/desktop-pet/sessions/<id>.json
-// for the desktop pet (~/.claude/desktop-pet/pet.ps1) to read. One file per
-// session; written only when the state changes.
+// for the desktop pet (~/.claude/desktop-pet/pet.ps1) to read, and drawn in the
+// band above the prompt while a turn runs. One file per session; written only
+// when the state changes.
 type PetState = 'idle' | 'thinking' | 'working' | 'answering' | 'waiting' | 'done' | 'ended'
 
+// The session's state, as her pose in the band.
+const BAND_MOOD: Record<PetState, Mood> = {
+  idle: 'thinking',
+  thinking: 'thinking',
+  working: 'working',
+  answering: 'speaking',
+  waiting: 'waiting',
+  done: 'done',
+  ended: 'idle',
+}
+
 const PROMPT_CHARS = 18
+
+// The band's drawing is laid out at 160px tall; this scales it on screen.
+const BAND_SCALE = 0.5
 
 let file = ''
 let folder = ''
 let prompt = ''
 let id = ''
-let last: PetState | '' = ''
+let tool = ''
+let last: PetState = 'idle'
 let isReported = false
 
 // The mod lives under ~/.claude, so its own folder names ~/.claude; the
@@ -57,6 +64,7 @@ async function setState($: EngineInterface, state: PetState, force = false): Pro
     return
   }
   last = state
+  $.ui.invalidate('ui.render')
   try {
     await locate($)
     const updatedAt = await $.clock.now()
@@ -103,7 +111,8 @@ export const register: Register = on => {
   })
 
   on('tool.call', async ($, e, next) => {
-    await setState($, e.tool === 'AskUserQuestion' ? 'waiting' : 'working')
+    tool = e.tool
+    await setState($, e.tool === 'AskUserQuestion' ? 'waiting' : 'working', true)
     const ran = await next(e)
     await setState($, 'thinking')
 
@@ -161,22 +170,25 @@ export const register: Register = on => {
     )
   })
 
-  // The row that runs while a turn works: her thinking or working pose.
-  on('ui.render', { component: 'Spinner' }, async ($, e, next) => {
-    if (e.surface === 'terminal') {
+  // While a turn runs, the band above the prompt shows her pose and a large
+  // status label (the spinner row is too short to show either legibly).
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    // While answering, the reply itself is on screen: nothing to add.
+    if (e.surface === 'terminal' || !e.props.isWorking || e.props.hasSurvey || last === 'answering') {
       return next(e)
     }
-    const { Box, Text, Svg } = $.ui.resolve(e)
-    const mood = SPINNER_MOOD[e.props.mode] ?? 'thinking'
-    const words = e.props.message ?? e.props.word
+    const { Box, Svg } = $.ui.resolve(e)
+    const mood = BAND_MOOD[last]
+    const status = fangyiStatusSvg(mood, last === 'working' ? tool : '')
 
     return (
-      <Box flexDirection="row" alignItems="center" gap={1}>
-        <Svg source={fangyiSvg(mood, 'bust-wide')} alt={`${NAME}, ${mood}`} width={88} />
-        <Text italic dimColor>
-          {words}
-          {e.props.suffix}
-        </Text>
+      <Box flexDirection="row" alignItems="center">
+        <Svg
+          source={status.source}
+          alt={`${NAME}, ${mood}`}
+          width={Math.round(status.width * BAND_SCALE)}
+          height={Math.round(status.height * BAND_SCALE)}
+        />
       </Box>
     )
   })
