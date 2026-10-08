@@ -62,3 +62,26 @@ test('with no environment to read, the terminal still draws cells', async $ => {
   expect(await ui.find({ type: 'Raster', key: 'avatar' })).toBeDefined()
   await ui.unmount()
 })
+
+test('a background command keeps the band up after the turn', async ($, on) => {
+  mock.env(on, { TERM: 'xterm-256color' })
+  mock.clock(on)
+  // Beneath the plugin, the command starts and returns at once.
+  on('tool.call', () => ({ result: 'Command running in background with ID: b1' }))
+  await $.tool.call({ tool: 'Bash', input: { command: 'sleep 60', run_in_background: true } })
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({
+      plugin: PLUGIN,
+      surface,
+      component: 'AbovePrompt',
+      props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 100 },
+    })
+    if (surface === 'terminal') {
+      expect(await ui.find({ type: 'Text', text: /背景執行中/ })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: /背景指令 ×1/ })).toBeDefined()
+    } else {
+      expect(await ui.find({ type: 'Svg' })).toBeDefined()
+    }
+    await ui.unmount()
+  }
+})

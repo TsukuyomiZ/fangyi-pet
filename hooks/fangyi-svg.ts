@@ -198,8 +198,9 @@ export function fangyiStatusSvg(
   mood: Mood,
   detail: string,
   withCompanions = false,
+  status = STATUS_LABEL[mood],
 ): { source: string; width: number; height: number } {
-  const label = `${STATUS_LABEL[mood]}…`
+  const label = `${status}…`
   const shown = detail.length > DETAIL_CHARS ? `${detail.slice(0, DETAIL_CHARS - 1)}…` : detail
   const pillWidth = Math.ceil(Math.max(textWidth(label, 30), textWidth(shown, 17)) + 36)
   const height = 160

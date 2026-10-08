@@ -68,8 +68,9 @@ $look = @{
   waiting   = @{ text = '等你確認'; color = '#D9363E'; rank = 0 }
   done      = @{ text = '跑好了 ✓'; color = '#4E9A2A'; rank = 1 }
   working   = @{ text = '工作中';   color = '#C49A2C'; rank = 2 }
-  answering = @{ text = '回答中';   color = '#3A8FD9'; rank = 3 }
-  thinking  = @{ text = '思考中';   color = '#8A8F99'; rank = 4 }
+  background = @{ text = '背景執行中'; color = '#7B6CD9'; rank = 3 }
+  answering = @{ text = '回答中';   color = '#3A8FD9'; rank = 4 }
+  thinking  = @{ text = '思考中';   color = '#8A8F99'; rank = 5 }
 }
 
 $script:seen = @{}      # session id -> updatedAt of the 'done' already seen
@@ -86,12 +87,17 @@ function Read-Sessions {
       Remove-Item -LiteralPath $f.FullName -ErrorAction SilentlyContinue
       continue
     }
+    # What the pet shows: a finished turn whose background commands or
+    # sub-agents still run is still at work, not done.
+    $view = $s.state
+    if (($view -eq 'done' -or $view -eq 'idle') -and ([int]$s.background -gt 0 -or [int]$s.agents -gt 0)) { $view = 'background' }
+    $s | Add-Member -NotePropertyName view -NotePropertyValue $view -Force
     $list += $s
   }
   , $list
 }
 
-function Is-Unseen($s) { $s.state -eq 'done' -and $script:seen[$s.id] -ne $s.updatedAt }
+function Is-Unseen($s) { $s.view -eq 'done' -and $script:seen[$s.id] -ne $s.updatedAt }
 
 function Mark-Seen($s) { $script:seen[$s.id] = $s.updatedAt }
 
@@ -108,19 +114,19 @@ function Refresh {
   $chime = $false
   foreach ($s in $sessions) {
     $was = $script:prev[$s.id]
-    if ($s.state -eq 'done' -and $was -and $was -ne 'done' -and -not $script:firstPoll) { $chime = $true }
-    $script:prev[$s.id] = $s.state
-    if ($s.state -eq 'done' -and -not (Is-Unseen $s)) { continue }
-    if ($look.ContainsKey($s.state)) { $shown += $s }
+    if ($s.view -eq 'done' -and $was -and $was -ne 'done' -and -not $script:firstPoll) { $chime = $true }
+    $script:prev[$s.id] = $s.view
+    if ($s.view -eq 'done' -and -not (Is-Unseen $s)) { continue }
+    if ($look.ContainsKey($s.view)) { $shown += $s }
   }
   $script:firstPoll = $false
   if ($chime) { [System.Media.SystemSounds]::Asterisk.Play() }
 
-  $states = $shown | ForEach-Object { $_.state }
+  $states = $shown | ForEach-Object { $_.view }
   $pose = 'idle'
   if ($states -contains 'waiting') { $pose = 'waiting' }
   elseif ($states -contains 'done') { $pose = 'done' }
-  elseif ($states -contains 'working') { $pose = 'working' }
+  elseif ($states -contains 'working' -or $states -contains 'background') { $pose = 'working' }
   elseif ($states -contains 'answering') { $pose = 'speaking' }
   elseif ($states -contains 'thinking') { $pose = 'thinking' }
   $pet.Source = $poses[$pose]
@@ -131,8 +137,8 @@ function Refresh {
   $mifu.Visibility = $panda.Visibility
 
   $rows.Children.Clear()
-  foreach ($s in ($shown | Sort-Object { $look[$_.state].rank }, { $_.folder })) {
-    $l = $look[$s.state]
+  foreach ($s in ($shown | Sort-Object { $look[$_.view].rank }, { $_.folder })) {
+    $l = $look[$s.view]
     $brush = (New-Object System.Windows.Media.BrushConverter).ConvertFromString($l.color)
 
     $row = New-Object System.Windows.Controls.DockPanel
@@ -149,6 +155,7 @@ function Refresh {
 
     $status = New-Object System.Windows.Controls.TextBlock
     $status.Text = $l.text; $status.Foreground = $brush; $status.FontWeight = 'Bold'
+    if ([int]$s.background -gt 0) { $status.Text += " · $([int]$s.background) 背景指令" }
     if ([int]$s.agents -gt 0) { $status.Text += " · $([int]$s.agents) sub-agent" }
     $status.Margin = '8,0,0,0'; $status.FontSize = 12
     [System.Windows.Controls.DockPanel]::SetDock($status, 'Right')
@@ -172,7 +179,7 @@ function Refresh {
 }
 
 function Mark-AllSeen {
-  foreach ($s in (Read-Sessions)) { if ($s.state -eq 'done') { Mark-Seen $s } }
+  foreach ($s in (Read-Sessions)) { if ($s.view -eq 'done') { Mark-Seen $s } }
   Refresh
 }
 

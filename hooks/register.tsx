@@ -26,6 +26,9 @@ const BAND_MOOD: Record<PetState, Mood> = {
 
 const PROMPT_CHARS = 18
 
+// What the band says while only background work runs.
+const BACKGROUND_LABEL = '背景執行中'
+
 // Where a prompt the person typed comes from: the terminal, a remote
 // surface, or a host app such as the desktop.
 const PERSON_ORIGINS = new Set(['composer', 'bridge', 'sdk'])
@@ -42,6 +45,11 @@ let last: PetState = 'idle'
 let isReported = false
 // The sub-agents running now, by agent id; while any run, the companions show.
 const agents = new Set<string>()
+// Background commands still running, by the tool_use_id that started them,
+// with when they started; each ends with a task-notification naming that id.
+const background = new Map<string, number>()
+// A background command whose notification never came is forgotten after this.
+const BACKGROUND_MAX_MS = 3 * 60 * 60 * 1000
 
 // The mod lives under ~/.claude, so its own folder names ~/.claude; the
 // environment is the fallback.
@@ -75,7 +83,15 @@ async function setState($: EngineInterface, state: PetState, force = false): Pro
   try {
     await locate($)
     const updatedAt = await $.clock.now()
-    await $.fs.write(file, JSON.stringify({ id, state, folder, prompt, agents: agents.size, updatedAt }))
+    for (const [toolUseId, startedAt] of background) {
+      if (updatedAt - startedAt > BACKGROUND_MAX_MS) {
+        background.delete(toolUseId)
+      }
+    }
+    await $.fs.write(
+      file,
+      JSON.stringify({ id, state, folder, prompt, agents: agents.size, background: background.size, updatedAt }),
+    )
   } catch (error) {
     // The pet is a nicety: a failed write never disturbs the session, but
     // says why once.
@@ -166,6 +182,12 @@ export const register: Register = on => {
     if (PERSON_ORIGINS.has(e.origin.kind)) {
       prompt = e.text.trim().split('\n')[0].slice(0, PROMPT_CHARS)
     }
+    // A background task's notification ends the commands it names.
+    if (e.origin.kind === 'task-notification') {
+      for (const match of e.text.matchAll(/<tool-use-id>([^<]+)<\/tool-use-id>/g)) {
+        background.delete(match[1].trim())
+      }
+    }
     await setState($, 'thinking', true)
 
     return next(e)
@@ -198,6 +220,9 @@ export const register: Register = on => {
     const ran = await next(e)
     if (e.tool === 'Agent') {
       await reconcileAgents($)
+    } else if ((e.input as { run_in_background?: boolean }).run_in_background === true) {
+      // A background sub-agent is counted by agent.spawn; anything else here.
+      background.set(e.tool_use_id, await $.clock.now())
     }
     await setState($, 'thinking')
 
@@ -213,6 +238,18 @@ export const register: Register = on => {
     }
 
     return started
+  })
+
+  // A turn stopping lists the background work still in flight: a count of
+  // commands it no longer lists was missed and is dropped.
+  on('classic.Stop', async ($, e, next) => {
+    const stopped = await next(e)
+    if (Array.isArray(e.background_tasks) && !e.background_tasks.some(task => task.type === 'shell')) {
+      background.clear()
+      await setState($, last, true)
+    }
+
+    return stopped
   })
 
   // A permission dialog is about to be shown: the session waits on the person.
@@ -291,12 +328,19 @@ export const register: Register = on => {
   // status label (the spinner row is too short to show either legibly).
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     // While answering, the reply itself is on screen: nothing to add.
-    if (!e.props.isWorking || e.props.hasSurvey || last === 'answering') {
+    // After the turn, background work keeps the band up: she works on.
+    const inBackground = !e.props.isWorking && (background.size > 0 || agents.size > 0)
+    if ((!e.props.isWorking && !inBackground) || e.props.hasSurvey || last === 'answering') {
       return next(e)
     }
-    const mood = BAND_MOOD[last]
+    const mood = inBackground ? 'working' : BAND_MOOD[last]
+    const label = inBackground ? BACKGROUND_LABEL : STATUS_LABEL[mood]
     const withCompanions = agents.size > 0
-    const detail = withCompanions ? `sub-agent ×${agents.size}` : last === 'working' ? tool : ''
+    const counts = [
+      background.size > 0 ? `背景指令 ×${background.size}` : '',
+      agents.size > 0 ? `sub-agent ×${agents.size}` : '',
+    ].filter(Boolean)
+    const detail = counts.length > 0 ? counts.join(' · ') : last === 'working' ? tool : ''
 
     if (e.surface === 'terminal') {
       const t = $.ui.resolve(e)
@@ -312,7 +356,7 @@ export const register: Register = on => {
           {fits && withCompanions && headshot(t, 'mifu', root, pictures)}
           <t.Box flexDirection="column" borderStyle="round" borderColor={LIME} paddingX={1} alignSelf="center">
             <t.Text bold color={LIME}>
-              {STATUS_LABEL[mood]}…
+              {label}…
             </t.Text>
             {detail !== '' && <t.Text dimColor>{detail}</t.Text>}
           </t.Box>
@@ -321,7 +365,7 @@ export const register: Register = on => {
     }
 
     const { Box, Svg } = $.ui.resolve(e)
-    const status = fangyiStatusSvg(mood, detail, withCompanions)
+    const status = fangyiStatusSvg(mood, detail, withCompanions, label)
 
     return (
       <Box flexDirection="row" alignItems="center">
